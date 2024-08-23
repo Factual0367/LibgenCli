@@ -1,6 +1,6 @@
 module libgencli
 
-go 1.22.6
+go 1.23.0
 
 require (
 	github.com/charmbracelet/bubbles v0.19.0
@@ -37,6 +37,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.15.2 // indirect
+	github.com/onurhanak/libgenapi v0.0.0-20240823164848-64db115e968b // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect

@@ -3,17 +3,16 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	colly "github.com/gocolly/colly"
+	"github.com/onurhanak/libgenapi"
 )
 
 var baseStyle = lipgloss.NewStyle().
@@ -45,12 +44,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "enter":
-			getBook(m.textInput.Value(), &m)
+			query := libgenapi.NewQuery("default", m.textInput.Value())
+			err := query.Search()
+			if err != nil {
+				fmt.Println("Error during search:", err)
+				return m, nil
+			}
+
+			// Populate the table with the search results
+			m.rows = []table.Row{}
+			for _, book := range query.Results {
+				m.rows = append(m.rows, table.Row{book.Author, book.Title, book.Extension, book.DownloadLink, ""})
+			}
+			m.table.SetRows(m.rows)
+
 			return m, nil
 
 		case "ctrl+d":
 			selectedRow := m.table.SelectedRow()
-			if len(selectedRow) >= 5 {
+			if len(selectedRow) >= 4 {
 				// update the row to show "Downloading..." status
 				rowIndex := m.table.Cursor()
 				m.rows = updateRowStatus(m.rows, rowIndex, "Downloading...")
@@ -64,10 +76,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "ctrl+c", "esc":
 			return m, tea.Quit
-
-		case "h", "j", "k", "l":
-			// do nothing to prevent table navigation
-			return m, nil
 		}
 
 	case downloadFinishedMsg:
@@ -106,87 +114,20 @@ func (m model) View() string {
 	return baseStyle.Render(m.textInput.View()) + "\n" + baseStyle.Render(m.table.View()) + "\n"
 }
 
-func strip(s string) string {
-	var result strings.Builder
-	for i := 0; i < len(s); i++ {
-		b := s[i]
-		if ('a' <= b && b <= 'z') ||
-			('A' <= b && b <= 'Z') ||
-			('0' <= b && b <= '9') ||
-			b == ' ' {
-			result.WriteByte(b)
-		}
-	}
-	return result.String()
-}
+func CleanFileName(filename string) string {
+	filename = strings.ReplaceAll(filename, " ", "_")
 
-func getBook(query string, m *model) {
-	c := colly.NewCollector(
-		colly.AllowedDomains("libgen.is"),
-	)
+	filename = strings.ReplaceAll(filename, "/", "_")
 
-	var books []Book
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_\.-]`)
+	filename = reg.ReplaceAllString(filename, "")
 
-	c.OnHTML("tr", func(e *colly.HTMLElement) {
-		book := Book{}
-
-		e.ForEach("td", func(index int, el *colly.HTMLElement) {
-			switch index {
-			case 0:
-				book.ID = el.Text
-			case 1:
-				book.Author = el.Text
-			case 8:
-				book.Filetype = el.Text
-			case 2:
-				book.Title = el.ChildText("a")
-				md5 := strings.Split(el.ChildAttr("a", "href"), "md5=")
-				if len(md5) == 2 {
-					book.MD5 = strings.Split(el.ChildAttr("a", "href"), "md5=")[1]
-				} else {
-					book.MD5 = ""
-				}
-
-			}
-		})
-
-		if book.Title != "" {
-			books = append(books, book)
-		}
-	})
-
-	query = url.QueryEscape(query)
-	var targetPage string = "https://libgen.is/search.php?req=" + query + "&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def"
-
-	err := c.Visit(targetPage)
-	if err != nil {
-		log.Println("Failed to visit target page:", err)
-		return
-	}
-
-	p := tea.NewProgram(bookSearchModel(books))
-	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func generateDownloadLink(md5 string, bookID string, bookTitle string, bookFiletype string) string {
-	var newBookID string
-	if len(bookID) == 4 {
-		newBookID = string(bookID[:1]) + "000"
-	} else if len(bookID) == 5 {
-		newBookID = string(bookID[:2]) + "000"
-	}
-
-	md5 = strings.ToLower(md5)
-	bookTitle = strings.Replace(strip(bookTitle), " ", "_", -1)
-	downloadLink := "https://download.library.lol/main/" + newBookID + "/" + md5 + "/" + bookTitle + "." + bookFiletype
-
-	return downloadLink
+	return filename
 }
 
 func DownloadFile(title string, filetype string, link string) error {
 	fileName := fmt.Sprintf("%s.%s", title, filetype)
+	fileName = CleanFileName(fileName)
 	out, err := os.Create(fileName)
 	if err != nil {
 		return err
@@ -210,47 +151,6 @@ func DownloadFile(title string, filetype string, link string) error {
 	return nil
 }
 
-func bookSearchModel(books []Book) model {
-	fmt.Print("\033[H\033[2J")
-	columns := []table.Column{
-		{Title: "Authors", Width: 30},
-		{Title: "Title", Width: 60},
-		{Title: "Filetype", Width: 10},
-		{Title: "Link", Width: 30},
-		{Title: "Status", Width: 15},
-	}
-
-	rows := []table.Row{}
-
-	for index, book := range books {
-		if index < 3 {
-			continue
-		} else if index == 50 {
-			break
-		}
-
-		book.Link = generateDownloadLink(book.MD5, book.ID, book.Title, book.Filetype)
-		rows = append(rows, []string{book.Author, book.Title, book.Filetype, book.Link, ""})
-	}
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(15),
-	)
-
-	ti := textinput.New()
-	ti.Placeholder = "Query"
-	ti.Focus()
-	ti.CharLimit = 250
-	ti.Width = 152
-
-	m := model{ti, t, rows}
-
-	fmt.Println("Enter to search. ESC to quit. Ctrl+D to download.")
-	return m
-}
-
 func main() {
 	fmt.Print("\033[H\033[2J")
 	columns := []table.Column{
@@ -267,7 +167,7 @@ func main() {
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(0),
+		table.WithHeight(15),
 	)
 
 	s := table.DefaultStyles()
