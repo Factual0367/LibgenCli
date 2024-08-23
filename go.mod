@@ -1,4 +1,4 @@
-module libgenScraper
+module libgencli
 
 go 1.22.6
 

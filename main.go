@@ -35,22 +35,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
+		// Update the text input for all keys, so it captures hjkl
+		m.textInput, cmd = m.textInput.Update(msg)
 
+		// Prevent hjkl from being handled by the table
+		switch msg.String() {
 		case "enter":
 			getBook(m.textInput.Value())
 
-		case "d":
-			go DownloadFile(m.table.SelectedRow()[1], m.table.SelectedRow()[2], m.table.SelectedRow()[3])
-			return m, tea.Batch(
-				tea.Printf("Downloading %s", m.table.SelectedRow()[1]),
-			)
+		case "ctrl+d":
+			selectedRow := m.table.SelectedRow()
+			if len(selectedRow) >= 4 {
+				go DownloadFile(selectedRow[1], selectedRow[2], selectedRow[3])
+			} else {
+				fmt.Println("You need to make a search first.")
+			}
+			return m, tea.Batch()
 
-		case "ctrl+c", "q":
+		case "ctrl+c", "esc":
 			return m, tea.Quit
+
+		case "h", "j", "k", "l":
+			// Do nothing to prevent table navigation, but allow typing in text input
+			return m, nil
 		}
 	}
-	m.textInput, cmd = m.textInput.Update(msg)
+
+	// Update the table with the remaining keys
 	m.table, cmd = m.table.Update(msg)
 
 	return m, cmd
@@ -140,6 +151,7 @@ func generateDownloadLink(md5 string, bookID string, bookTitle string, bookFilet
 }
 
 func DownloadFile(title string, filetype string, link string) error {
+	fmt.Printf("Downloading %s", title)
 	fileName := fmt.Sprintf("%s.%s", title, filetype)
 	out, err := os.Create(fileName)
 	if err != nil {
@@ -201,6 +213,7 @@ func bookSearchModel(books []Book) model {
 
 	m := model{ti, t}
 
+	fmt.Println("Enter to search. ESC to quit. Ctrl+D to download.")
 	return m
 }
 
@@ -239,7 +252,7 @@ func main() {
 	ti.Focus()
 	ti.CharLimit = 250
 	ti.Width = 135
-	fmt.Println("Enter to search. Q to quit. D to download.")
+	fmt.Println("Enter to search. ESC to quit. Ctrl+D to download.")
 	m := model{ti, t}
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Println("Error running program:", err)
