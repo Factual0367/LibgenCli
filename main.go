@@ -27,6 +27,12 @@ type Book struct {
 type model struct {
 	textInput textinput.Model
 	table     table.Model
+	rows      []table.Row
+}
+
+type downloadFinishedMsg struct {
+	index  int
+	status string
 }
 
 func (m model) Init() tea.Cmd { return nil }
@@ -35,36 +41,65 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Update the text input for all keys, so it captures hjkl
 		m.textInput, cmd = m.textInput.Update(msg)
 
-		// Prevent hjkl from being handled by the table
 		switch msg.String() {
 		case "enter":
-			getBook(m.textInput.Value())
+			getBook(m.textInput.Value(), &m)
+			return m, nil
 
 		case "ctrl+d":
 			selectedRow := m.table.SelectedRow()
-			if len(selectedRow) >= 4 {
-				go DownloadFile(selectedRow[1], selectedRow[2], selectedRow[3])
+			if len(selectedRow) >= 5 {
+				// update the row to show "Downloading..." status
+				rowIndex := m.table.Cursor()
+				m.rows = updateRowStatus(m.rows, rowIndex, "Downloading...")
+				m.table.SetRows(m.rows)
+
+				return m, downloadFileCmd(selectedRow[1], selectedRow[2], selectedRow[3], rowIndex)
 			} else {
 				fmt.Println("You need to make a search first.")
 			}
-			return m, tea.Batch()
+			return m, nil
 
 		case "ctrl+c", "esc":
 			return m, tea.Quit
 
 		case "h", "j", "k", "l":
-			// Do nothing to prevent table navigation, but allow typing in text input
+			// do nothing to prevent table navigation
 			return m, nil
 		}
+
+	case downloadFinishedMsg:
+		// change the status msg
+		m.rows = updateRowStatus(m.rows, msg.index, msg.status)
+		m.table.SetRows(m.rows)
 	}
 
-	// Update the table with the remaining keys
 	m.table, cmd = m.table.Update(msg)
 
 	return m, cmd
+}
+
+// downloadFileCmd starts the file download and returns a trigger
+func downloadFileCmd(title, filetype, link string, index int) tea.Cmd {
+	return func() tea.Msg {
+		err := DownloadFile(title, filetype, link)
+		status := "Downloaded"
+		if err != nil {
+			status = "Failed"
+		}
+		return downloadFinishedMsg{index: index, status: status}
+	}
+}
+
+func updateRowStatus(rows []table.Row, index int, status string) []table.Row {
+	if index >= 0 && index < len(rows) {
+		row := rows[index]
+		row[4] = status
+		rows[index] = row
+	}
+	return rows
 }
 
 func (m model) View() string {
@@ -85,7 +120,7 @@ func strip(s string) string {
 	return result.String()
 }
 
-func getBook(query string) {
+func getBook(query string, m *model) {
 	c := colly.NewCollector(
 		colly.AllowedDomains("libgen.is"),
 	)
@@ -151,7 +186,6 @@ func generateDownloadLink(md5 string, bookID string, bookTitle string, bookFilet
 }
 
 func DownloadFile(title string, filetype string, link string) error {
-	fmt.Printf("Downloading %s", title)
 	fileName := fmt.Sprintf("%s.%s", title, filetype)
 	out, err := os.Create(fileName)
 	if err != nil {
@@ -173,7 +207,6 @@ func DownloadFile(title string, filetype string, link string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Download finished for %s", title)
 	return nil
 }
 
@@ -184,6 +217,7 @@ func bookSearchModel(books []Book) model {
 		{Title: "Title", Width: 60},
 		{Title: "Filetype", Width: 10},
 		{Title: "Link", Width: 30},
+		{Title: "Status", Width: 15},
 	}
 
 	rows := []table.Row{}
@@ -196,7 +230,7 @@ func bookSearchModel(books []Book) model {
 		}
 
 		book.Link = generateDownloadLink(book.MD5, book.ID, book.Title, book.Filetype)
-		rows = append(rows, []string{book.Author, book.Title, book.Filetype, book.Link})
+		rows = append(rows, []string{book.Author, book.Title, book.Filetype, book.Link, ""})
 	}
 	t := table.New(
 		table.WithColumns(columns),
@@ -209,9 +243,9 @@ func bookSearchModel(books []Book) model {
 	ti.Placeholder = "Query"
 	ti.Focus()
 	ti.CharLimit = 250
-	ti.Width = 135
+	ti.Width = 152
 
-	m := model{ti, t}
+	m := model{ti, t, rows}
 
 	fmt.Println("Enter to search. ESC to quit. Ctrl+D to download.")
 	return m
@@ -224,6 +258,7 @@ func main() {
 		{Title: "Title", Width: 60},
 		{Title: "Filetype", Width: 10},
 		{Title: "Link", Width: 30},
+		{Title: "Status", Width: 15},
 	}
 
 	rows := []table.Row{}
@@ -251,12 +286,11 @@ func main() {
 	ti.Placeholder = "Query"
 	ti.Focus()
 	ti.CharLimit = 250
-	ti.Width = 135
+	ti.Width = 152
 	fmt.Println("Enter to search. ESC to quit. Ctrl+D to download.")
-	m := model{ti, t}
+	m := model{ti, t, rows}
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
-
 }
