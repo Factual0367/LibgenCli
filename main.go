@@ -154,10 +154,10 @@ func DownloadFile(title string, filetype string, link string) error {
 func main() {
 	fmt.Print("\033[H\033[2J")
 	columns := []table.Column{
-		{Title: "Authors", Width: 30},
-		{Title: "Title", Width: 60},
+		{Title: "Authors", Width: 20},
+		{Title: "Title", Width: 40},
 		{Title: "Filetype", Width: 10},
-		{Title: "Link", Width: 30},
+		{Title: "Link", Width: 15},
 		{Title: "Status", Width: 15},
 	}
 
@@ -186,7 +186,7 @@ func main() {
 	ti.Placeholder = "Query"
 	ti.Focus()
 	ti.CharLimit = 250
-	ti.Width = 152
+	ti.Width = 107
 	fmt.Println("Enter to search. ESC to quit. Ctrl+D to download.")
 	m := model{ti, t, rows}
 	if _, err := tea.NewProgram(m).Run(); err != nil {
