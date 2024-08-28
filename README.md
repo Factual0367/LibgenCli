@@ -5,5 +5,5 @@
 **LibgenCli** is a CLI app for Library Genesis. 
 
 <sub>
-<p align='center'><img  src="assets/screenshot.png" height="400" width="auto"></p>
+<p align='center'><img  src="assets/screenshot1.png" height="400" width="auto"></p>
 </sub>
