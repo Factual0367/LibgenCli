@@ -1,3 +1,9 @@
-# LibgenCli
+<h1 align="center">LibgenCli</h1>
 
-This is a Library Genesis client built with Go. 
+
+
+**LibgenCli** is a CLI app for Library Genesis. 
+
+<sub>
+<p align='center'><img  src="assets/screenshot.png" height="400" width="auto"></p>
+</sub>
